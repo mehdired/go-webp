@@ -1,6 +1,7 @@
 package converter
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"os"
@@ -71,7 +72,6 @@ func ConvertToWebP(inputPath, outputFolder string, width, height int) error {
 
     // Calculate the new dimensions based on the orientation
     var newWidth, newHeight int
-
     if isLandscape {
 		newWidth = width
 		newHeight = int(float64(width) / float64(img.Bounds().Dx()) * float64(img.Bounds().Dy()))
@@ -81,6 +81,12 @@ func ConvertToWebP(inputPath, outputFolder string, width, height int) error {
 	}
 
 	img = imaging.Resize(img, newWidth, newHeight, imaging.Lanczos)
+
+	// Remove EXIF data
+	img, err = RemoveExif(img)
+	if err != nil {
+		return fmt.Errorf("error removing EXIF data: %v", err)
+	}
 
 	// Build the output path for the WebP file
 	outputPath := filepath.Join(outputFolder, strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))+".webp")
@@ -111,4 +117,19 @@ func isValidImageExtension(ext string) bool {
 
 	// Check if the extension exists in the map
 	return imageExts[strings.ToLower(ext)]
+}
+
+func RemoveExif(img image.Image) (image.Image, error) {
+	buf := new(bytes.Buffer)
+	err := webp.Encode(buf, img, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error encoding image to WebP: %v", err)
+	}
+
+	img, _, err = image.Decode(buf)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding WebP image: %v", err)
+	}
+
+	return img, nil
 }
