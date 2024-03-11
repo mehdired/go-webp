@@ -2,87 +2,19 @@ package converter
 
 import (
 	"fmt"
+	"image"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/h2non/bimg"
+	"github.com/chai2010/webp"
+
+	"github.com/disintegration/imaging"
 	"github.com/schollz/progressbar/v3"
 )
 
-// ConvertToWebP converts an image to WebP format with optional resizing
-func ConvertToWebP(inputPath, outputFolder string, width int, height int) error {
-	// Read the image into memory
-	img, err := bimg.Read(inputPath)
-	if err != nil {
-		return fmt.Errorf("error reading the image: %v", err)
-	}
-
-	size, _ := bimg.Size(img)
-	isLandscape := size.Width > size.Height
-
-	// Resize the image with the specified width or height based on landscape/portrait
-	var imgOptions bimg.Options
-	if isLandscape {
-		imgOptions = bimg.Options{Width: width, Height: 0, Embed: true}
-	} else {
-		imgOptions = bimg.Options{Width: 0, Height: height, Embed: true}
-	}
-
-	// Resize the image with the specified width while maintaining the aspect ratio
-	img, err = bimg.Resize(img, imgOptions)
-	if err != nil {
-		return fmt.Errorf("error resizing the image: %v", err)
-	}
-
-	// Build the full path for the WebP output file
-	outputFileName := fmt.Sprintf("%s.webp", strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath)))
-	outputPath := filepath.Join(outputFolder, outputFileName)
-
-	// Convert the image to WebP format
-	webpImg, err := bimg.NewImage(img).Convert(bimg.WEBP)
-	if err != nil {
-		return fmt.Errorf("error converting the image to WebP: %v", err)
-	}
-
-	// Create the WebP output file in the specified output folder
-	err = bimg.Write(outputPath, webpImg)
-	if err != nil {
-		return fmt.Errorf("error writing the WebP output file: %v", err)
-	}
-
-	return nil
-}
-
-// ConvertImages converts specified images or all images in a folder to WebP format with optional resizing
-func ConvertImages(inputs []string, outputFolder string, width int, height int) error {
-	for _, input := range inputs {
-		// Check if the input is a file or a directory
-		fileInfo, err := os.Stat(input)
-		if err != nil {
-			return fmt.Errorf("error accessing the input %s: %v", input, err)
-		}
-
-		if fileInfo.IsDir() {
-			// If it's a directory, convert all images in the directory
-			err := ConvertImagesInFolder(input, outputFolder, width, height)
-			if err != nil {
-				return fmt.Errorf("error converting images in the folder %s: %v", input, err)
-			}
-		} else {
-			// If it's a file, convert the individual image
-			err := ConvertToWebP(input, outputFolder, width, height)
-			if err != nil {
-				return fmt.Errorf("error converting the image %s: %v", input, err)
-			}
-		}
-	}
-
-	return nil
-}
-
 // ConvertImagesInFolder converts all images in a folder to WebP format with optional resizing
-func ConvertImagesInFolder(inputFolder, outputFolder string, width int, height int) error {
+func ConvertImagesInFolder(inputFolder, outputFolder string, width, height int) error {
 	// Read the list of files in the input folder
 	files, err := os.ReadDir(inputFolder)
 	if err != nil {
@@ -98,7 +30,6 @@ func ConvertImagesInFolder(inputFolder, outputFolder string, width int, height i
 			continue
 		}
 
-		// Check if the file has a valid image extension
 		ext := filepath.Ext(file.Name())
 		if !isValidImageExtension(ext) {
 			fmt.Printf("Skipping non-image file: %s\n", file.Name())
@@ -115,6 +46,54 @@ func ConvertImagesInFolder(inputFolder, outputFolder string, width int, height i
 		}
 
 		bar.Add(1)
+	}
+
+	return nil
+}
+
+// ConvertToWebP converts an image to WebP format with optional resizing
+func ConvertToWebP(inputPath, outputFolder string, width, height int) error {
+	// Open the input image file
+	inputFile, err := os.Open(inputPath)
+	if err != nil {
+		return fmt.Errorf("error opening the input image: %v", err)
+	}
+	defer inputFile.Close()
+
+	// Decode the image
+	img, _, err := image.Decode(inputFile)
+	if err != nil {
+		return fmt.Errorf("error decoding the image: %v", err)
+	}
+
+	// Determine the orientation of the image (landscape or portrait)
+	isLandscape := img.Bounds().Dy() < img.Bounds().Dx()
+
+    // Calculate the new dimensions based on the orientation
+    var newWidth, newHeight int
+
+    if isLandscape {
+		newWidth = width
+		newHeight = int(float64(width) / float64(img.Bounds().Dx()) * float64(img.Bounds().Dy()))
+	} else {
+		newHeight = height
+		newWidth = int(float64(height) / float64(img.Bounds().Dy()) * float64(img.Bounds().Dx()))
+	}
+
+	img = imaging.Resize(img, newWidth, newHeight, imaging.Lanczos)
+
+	// Build the output path for the WebP file
+	outputPath := filepath.Join(outputFolder, strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))+".webp")
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("error creating the WebP output file: %v", err)
+	}
+	defer outputFile.Close()
+
+	// Encode the image to WebP format
+	err = webp.Encode(outputFile, img, &webp.Options{Quality: 80})
+	if err != nil {
+		return fmt.Errorf("error encoding the image to WebP: %v", err)
 	}
 
 	return nil
