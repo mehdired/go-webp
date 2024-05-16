@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,6 +67,12 @@ func ConvertToWebP(inputPath, outputFolder string, width, height int) error {
 	if err != nil {
 		return fmt.Errorf("error decoding the image: %v", err)
 	}
+
+	  // Check if the original image dimensions are smaller than the target dimensions
+	  if img.Bounds().Dx() <= width && img.Bounds().Dy() <= height {
+        // If so, just copy the image without resizing
+        return copyImageToWebP(inputPath, outputFolder)
+    }
 
 	// Determine the orientation of the image (landscape or portrait)
 	isLandscape := img.Bounds().Dy() < img.Bounds().Dx()
@@ -132,4 +139,35 @@ func RemoveExif(img image.Image) (image.Image, error) {
 	}
 
 	return img, nil
+}
+
+func copyImageToWebP(inputPath, outputFolder string) error {
+    // Build the output path for the WebP file
+    outputPath := filepath.Join(outputFolder, strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))+".webp")
+
+    // Copy the input image file to the output path
+    err := fileCopy(inputPath, outputPath)
+    if err != nil {
+        return fmt.Errorf("error copying the image to WebP: %v", err)
+    }
+
+    return nil
+}
+
+// fileCopy copies a file from src to dst
+func fileCopy(src, dst string) error {
+    sourceFile, err := os.Open(src)
+    if err != nil {
+        return err
+    }
+    defer sourceFile.Close()
+
+    destinationFile, err := os.Create(dst)
+    if err != nil {
+        return err
+    }
+    defer destinationFile.Close()
+
+    _, err = io.Copy(destinationFile, sourceFile)
+    return err
 }
